@@ -98,7 +98,7 @@ output "jenkins-server" {
 }
 
 resource "aws_s3_bucket" "jenkinsbucket" {
-  bucket = "jenkins-project-oguzhan"
+  bucket = "jenkins-project-2-10-2023"
 
   tags = {
     Name        = "Jenkins-project"
@@ -117,3 +117,8 @@ resource "github_repository" "git_repo1" {
   auto_init = true
 }
 
+resource "null_resource" "git_clone" {
+  provisioner "local-exec" {
+    command = "git clone https://github.com/oguzhanaydogan/${github_repository.git_repo1.name}.git"
+  }
+}
