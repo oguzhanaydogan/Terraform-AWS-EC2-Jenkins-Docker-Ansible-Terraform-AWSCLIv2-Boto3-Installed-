@@ -1,5 +1,5 @@
 variable "key_name" {
-    default = "oguzhan"
+    default = "test1key"
   
 }
 variable "myami" {

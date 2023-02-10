@@ -1,5 +1,9 @@
 terraform {
   required_providers {
+    github = {
+      source = "integrations/github"
+      version = "5.17.0"
+    }
     aws = {
       source = "hashicorp/aws"
       version = "~>4.0"
@@ -10,6 +14,10 @@ terraform {
 provider "aws" {
 
 region = "us-east-1"
+}
+
+provider "github" {
+  token = file("github_token")
 }
 
 resource "aws_iam_role" "jenkins_server" {
@@ -35,8 +43,8 @@ resource "aws_iam_role" "jenkins_server" {
 
 }
 
-resource "aws_iam_instance_profile" "test_profile" {
-  name = "jenkins-server"
+resource "aws_iam_instance_profile" "jenkins_profile" {
+  name = "jenkins-server-profile"
   role = aws_iam_role.jenkins_server.name
 }
 
@@ -46,7 +54,7 @@ resource "aws_instance" "jenkins_ec2" {
   instance_type = var.instance_type
   key_name = var.key_name
   vpc_security_group_ids = [aws_security_group.tf-jenkins-sec-gr.id]
-  iam_instance_profile = aws_iam_instance_profile.test_profile.name
+  iam_instance_profile = aws_iam_instance_profile.jenkins_profile.name
   tags = {
     Name = var.tag
   }
@@ -88,3 +96,24 @@ resource "aws_security_group" "tf-jenkins-sec-gr" {
 output "jenkins-server" {
   value = "http://${aws_instance.jenkins_ec2.public_dns}:8080"
 }
+
+resource "aws_s3_bucket" "jenkinsbucket" {
+  bucket = "jenkins-project-oguzhan"
+
+  tags = {
+    Name        = "Jenkins-project"
+  }
+}
+
+resource "aws_s3_bucket_acl" "example" {
+  bucket = aws_s3_bucket.jenkinsbucket.id
+  acl    = "private"
+}
+
+resource "github_repository" "git_repo1" {
+  name        = "jenkins-project"
+
+  visibility = "public"
+  auto_init = true
+}
+
