@@ -1,30 +1,56 @@
 terraform {
   required_providers {
-    github = {
-      source = "integrations/github"
-      version = "5.17.0"
-    }
     aws = {
-      source = "hashicorp/aws"
-      version = "~>4.0"
+      source  = "hashicorp/aws"
+      version = "~> 4.0"
     }
   }
 }
 
 provider "aws" {
-
-region = "us-east-1"
+  region = "us-east-1"
 }
 
-provider "github" {
-  token = file("github_token")
+resource "aws_instance" "ec2_instance" {
+  ami                    = "ami-026b57f3c383c2eec"
+  instance_type          = "t3a.medium"
+  key_name               = var.ssh_key_name
+  vpc_security_group_ids = [aws_security_group.sg.id]
+  iam_instance_profile   = aws_iam_instance_profile.instance_profile.name
+  tags = {
+    Name = var.prefix
+  }
+  user_data = data.template_file.userdata.rendered
 }
 
-resource "aws_iam_role" "jenkins_server" {
-  name = "jenkins-server"
+locals {
+  ingress_ports = [22, 8080]
+}
 
-  # Terraform's "jsonencode" function converts a
-  # Terraform expression result to valid JSON syntax.
+resource "aws_security_group" "sg" {
+  name = "${var.prefix}-sg"
+
+  dynamic "ingress" {
+    for_each = local.ingress_ports
+    iterator = port
+    content {
+      from_port   = port.value
+      protocol    = "tcp"
+      to_port     = port.value
+      cidr_blocks = ["0.0.0.0/0"]
+    }
+  }
+
+  egress {
+    from_port   = 0
+    protocol    = -1
+    to_port     = 0
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}
+
+resource "aws_iam_role" "aws_access" {
+  name = "${var.prefix}-role"
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
@@ -35,90 +61,17 @@ resource "aws_iam_role" "jenkins_server" {
         Principal = {
           Service = "ec2.amazonaws.com"
         }
-      },
+      }
     ]
   })
-  managed_policy_arns = ["arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryFullAccess", "arn:aws:iam::aws:policy/AmazonEC2FullAccess","arn:aws:iam::aws:policy/AmazonS3FullAccess"]
-
-
+  managed_policy_arns = ["arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryFullAccess", "arn:aws:iam::aws:policy/AmazonEC2FullAccess", "arn:aws:iam::aws:policy/IAMFullAccess", "arn:aws:iam::aws:policy/AmazonS3FullAccess"]
 }
 
-resource "aws_iam_instance_profile" "jenkins_profile" {
-  name = "jenkins-server-profile"
-  role = aws_iam_role.jenkins_server.name
+resource "aws_iam_instance_profile" "instance_profile" {
+  name = "${var.prefix}-profile"
+  role = aws_iam_role.aws_access.name
 }
 
-
-resource "aws_instance" "jenkins_ec2" {
-  ami           = var.myami
-  instance_type = var.instance_type
-  key_name = var.key_name
-  vpc_security_group_ids = [aws_security_group.tf-jenkins-sec-gr.id]
-  iam_instance_profile = aws_iam_instance_profile.jenkins_profile.name
-  tags = {
-    Name = var.tag
-  }
-  user_data = file("jenkins.sh")
-}
-
-resource "aws_security_group" "tf-jenkins-sec-gr" {
-  name        = "${var.jenkins-sg}-${var.user}"
-  tags = {
-    name = var.jenkins-sg
-  }
-  ingress {
-    from_port        = 80
-    to_port          = 80
-    protocol         = "tcp"
-    cidr_blocks      = ["0.0.0.0/0"]
-  }
-
-  ingress {
-    from_port        = 8080
-    to_port          = 8080
-    protocol         = "tcp"
-    cidr_blocks      = ["0.0.0.0/0"]
-  }
-  ingress {
-    from_port        = 22
-    to_port          = 22
-    protocol         = "tcp"
-    cidr_blocks      = ["0.0.0.0/0"]
-  }
-
-  egress {
-    from_port        = 0
-    to_port          = 0
-    protocol         = -1
-    cidr_blocks      = ["0.0.0.0/0"]
-    }
-}
-output "jenkins-server" {
-  value = "http://${aws_instance.jenkins_ec2.public_dns}:8080"
-}
-
-resource "aws_s3_bucket" "jenkinsbucket" {
-  bucket = "jenkins-project-2-10-2023"
-
-  tags = {
-    Name        = "Jenkins-project"
-  }
-}
-
-resource "aws_s3_bucket_acl" "example" {
-  bucket = aws_s3_bucket.jenkinsbucket.id
-  acl    = "private"
-}
-
-resource "github_repository" "git_repo1" {
-  name        = "jenkins-project"
-
-  visibility = "public"
-  auto_init = true
-}
-
-resource "null_resource" "git_clone" {
-  provisioner "local-exec" {
-    command = "git clone https://github.com/oguzhanaydogan/${github_repository.git_repo1.name}.git ../${github_repository.git_repo1.name}"
-  }
+data "template_file" "userdata" {
+  template = file("${abspath(path.module)}/userdata.sh")
 }
